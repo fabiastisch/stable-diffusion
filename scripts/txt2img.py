@@ -96,6 +96,7 @@ def check_safety(x_image):
 
 
 def main():
+    # region Args
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
@@ -233,6 +234,7 @@ def main():
         default="autocast"
     )
     opt = parser.parse_args()
+    # endregion Args
 
     if opt.laion400m:
         print("Falling back to LAION 400M model...")
