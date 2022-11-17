@@ -310,12 +310,14 @@ def main():
                         # "unconditional guidance scale", default: 7.5   - TODO: what is that?
                         if opt.scale != 1.0:
                             # TODO: model without prompts
+                            # Latent Diffusion
                             uc = model.get_learned_conditioning(batch_size * [""])
 
                         if isinstance(prompts, tuple):
                             prompts = list(prompts)
 
                         # TODO: model just with prompts
+                        # Latent Diffusion
                         c = model.get_learned_conditioning(prompts)
 
                         # C = latent channels
@@ -328,6 +330,8 @@ def main():
                         # PLMS added here
                         # https://github.com/CompVis/latent-diffusion/pull/51
                         # TODO figure out what PLMS is
+                        # ddim_eta == random noise added during sampling
+                        # 1 = full; 0 = smooth changes (https://twitter.com/RiversHaveWings/status/1481389818315558912)
                         samples_ddim, _ = sampler.sample(S=opt.ddim_steps,
                                                          conditioning=c,
                                                          batch_size=opt.n_samples,
