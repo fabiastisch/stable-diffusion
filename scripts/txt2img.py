@@ -236,6 +236,7 @@ def main():
     opt = parser.parse_args()
     # endregion Args
 
+    # option laion400m - uses the LAION400M model
     if opt.laion400m:
         print("Falling back to LAION 400M model...")
         opt.config = "configs/latent-diffusion/txt2img-1p4B-eval.yaml"
@@ -245,11 +246,14 @@ def main():
     seed_everything(opt.seed)
 
     config = OmegaConf.load(f"{opt.config}")
+    # Model from config
     model = load_model_from_config(config, f"{opt.ckpt}")
 
+    # Using Cuda (GPU) if available, else cpu
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     model = model.to(device)
 
+    # Define Sampler
     if opt.dpm_solver:
         sampler = DPMSolverSampler(model)
     elif opt.plms:
@@ -266,6 +270,7 @@ def main():
     wm_encoder.set_watermark('bytes', wm.encode('utf-8'))
 
     batch_size = opt.n_samples
+    # Number of Rows in the Grid
     n_rows = opt.n_rows if opt.n_rows > 0 else batch_size
     if not opt.from_file:
         prompt = opt.prompt
@@ -288,20 +293,41 @@ def main():
         start_code = torch.randn([opt.n_samples, opt.C, opt.H // opt.f, opt.W // opt.f], device=device)
 
     precision_scope = autocast if opt.precision=="autocast" else nullcontext
+    # Disabling gradient calculation
     with torch.no_grad():
         with precision_scope("cuda"):
+            # Set Some weigts to ddpm model
+            # (maybe Denoising Diffusion Probabilistic Model -https://arxiv.org/abs/2006.11239)
             with model.ema_scope():
                 tic = time.time()
                 all_samples = list()
+                # for n_iter (sample this often) times TODO: was macht n_iter?
                 for n in trange(opt.n_iter, desc="Sampling"):
+                    # for every xyz in the prompt-data (data = [batch_size * [prompt]])
+                    # tqdm is just a progessbar see- (https://github.com/tqdm/tqdm)
                     for prompts in tqdm(data, desc="data"):
                         uc = None
+                        # "unconditional guidance scale", default: 7.5   - TODO: what is that?
                         if opt.scale != 1.0:
+                            # TODO: model without prompts
                             uc = model.get_learned_conditioning(batch_size * [""])
+
                         if isinstance(prompts, tuple):
                             prompts = list(prompts)
+
+                        # TODO: model just with prompts
                         c = model.get_learned_conditioning(prompts)
+
+                        # C = latent channels
+                        # H = image height, in pixel space
+                        # W = image width, in pixel space
+                        # f = downsampling factor
+                        # so Channels, Height/factor, Width/factor
                         shape = [opt.C, opt.H // opt.f, opt.W // opt.f]
+                        # Running sampling (default PLMS-Sampling)
+                        # PLMS added here
+                        # https://github.com/CompVis/latent-diffusion/pull/51
+                        # TODO figure out what PLMS is
                         samples_ddim, _ = sampler.sample(S=opt.ddim_steps,
                                                          conditioning=c,
                                                          batch_size=opt.n_samples,
@@ -312,15 +338,20 @@ def main():
                                                          eta=opt.ddim_eta,
                                                          x_T=start_code)
 
+                        # decode, clamp and permute sample?
+                        # TODO: what is this doing
                         x_samples_ddim = model.decode_first_stage(samples_ddim)
                         x_samples_ddim = torch.clamp((x_samples_ddim + 1.0) / 2.0, min=0.0, max=1.0)
                         x_samples_ddim = x_samples_ddim.cpu().permute(0, 2, 3, 1).numpy()
 
+                        # Check sample for nsfw content
                         x_checked_image, has_nsfw_concept = check_safety(x_samples_ddim)
 
+                        # permute again
                         x_checked_image_torch = torch.from_numpy(x_checked_image).permute(0, 3, 1, 2)
 
                         if not opt.skip_save:
+                            # Save the individual samples
                             for x_sample in x_checked_image_torch:
                                 x_sample = 255. * rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
                                 img = Image.fromarray(x_sample.astype(np.uint8))
@@ -332,6 +363,8 @@ def main():
                             all_samples.append(x_checked_image_torch)
 
                 if not opt.skip_grid:
+                    # Save the Grid image
+
                     # additionally, save as grid
                     grid = torch.stack(all_samples, 0)
                     grid = rearrange(grid, 'n b c h w -> (n b) c h w')
