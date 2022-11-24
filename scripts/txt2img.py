@@ -22,7 +22,6 @@ from ldm.models.diffusion.dpm_solver import DPMSolverSampler
 from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionSafetyChecker
 from transformers import AutoFeatureExtractor
 
-
 # load safety model
 safety_model_id = "CompVis/stable-diffusion-safety-checker"
 safety_feature_extractor = AutoFeatureExtractor.from_pretrained(safety_model_id)
@@ -78,7 +77,7 @@ def load_replacement(x):
     try:
         hwc = x.shape
         y = Image.open("assets/rick.jpeg").convert("RGB").resize((hwc[1], hwc[0]))
-        y = (np.array(y)/255.0).astype(x.dtype)
+        y = (np.array(y) / 255.0).astype(x.dtype)
         assert y.shape == x.shape
         return y
     except Exception:
@@ -292,7 +291,7 @@ def main():
     if opt.fixed_code:
         start_code = torch.randn([opt.n_samples, opt.C, opt.H // opt.f, opt.W // opt.f], device=device)
 
-    precision_scope = autocast if opt.precision=="autocast" else nullcontext
+    precision_scope = autocast if opt.precision == "autocast" else nullcontext
     # Disabling gradient calculation
     with torch.no_grad():
         with precision_scope("cuda"):
@@ -312,6 +311,7 @@ def main():
                             # TODO: model without prompts
                             # Latent Diffusion
                             uc = model.get_learned_conditioning(batch_size * [""])
+                            # print(uc.shape) # torch.Size([3, 77, 768])
 
                         if isinstance(prompts, tuple):
                             prompts = list(prompts)
@@ -319,6 +319,7 @@ def main():
                         # TODO: model just with prompts
                         # Latent Diffusion
                         c = model.get_learned_conditioning(prompts)
+                        print(c.shape) # Torch.Size([3, 77, 768])
 
                         # C = latent channels
                         # H = image height, in pixel space
@@ -344,8 +345,10 @@ def main():
 
                         # decode, clamp and permute sample?
                         # TODO: what is this doing
+                        # print(samples_ddim.shape) # torch.Size([3, 4, 32, 32])
                         x_samples_ddim = model.decode_first_stage(samples_ddim)
                         x_samples_ddim = torch.clamp((x_samples_ddim + 1.0) / 2.0, min=0.0, max=1.0)
+                        # print(x_samples_ddim.shape)# torch.Size([3, 3, 256, 256]) // H 256 | W 256 as parm
                         x_samples_ddim = x_samples_ddim.cpu().permute(0, 2, 3, 1).numpy()
 
                         # Check sample for nsfw content
@@ -353,6 +356,7 @@ def main():
 
                         # permute again
                         x_checked_image_torch = torch.from_numpy(x_checked_image).permute(0, 3, 1, 2)
+                        # print(x_checked_image_torch.shape) # torch.Size([3, 3, 256, 256])
 
                         if not opt.skip_save:
                             # Save the individual samples
