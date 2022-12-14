@@ -284,6 +284,13 @@ def main():
 
     sample_path = os.path.join(outpath, "samples")
     os.makedirs(sample_path, exist_ok=True)
+    process_path = os.path.join(outpath, "process")
+    os.makedirs(process_path, exist_ok=True)
+    process2_path = os.path.join(outpath, "process2")
+    os.makedirs(process2_path, exist_ok=True)
+    processList = []
+    process2List = []
+
     base_count = len(os.listdir(sample_path))
     grid_count = len(os.listdir(outpath)) - 1
 
@@ -319,7 +326,7 @@ def main():
                         # TODO: model just with prompts
                         # Latent Diffusion
                         c = model.get_learned_conditioning(prompts)
-                        print(c.shape) # Torch.Size([3, 77, 768])
+                        print(c.shape)  # Torch.Size([3, 77, 768])
 
                         # C = latent channels
                         # H = image height, in pixel space
@@ -327,12 +334,18 @@ def main():
                         # f = downsampling factor
                         # so Channels, Height/factor, Width/factor
                         shape = [opt.C, opt.H // opt.f, opt.W // opt.f]
+
                         # Running sampling (default PLMS-Sampling)
                         # PLMS added here
                         # https://github.com/CompVis/latent-diffusion/pull/51
                         # TODO figure out what PLMS is
                         # ddim_eta == random noise added during sampling
                         # 1 = full; 0 = smooth changes (https://twitter.com/RiversHaveWings/status/1481389818315558912)
+
+                        def save_step(imgstep, img0, i):
+                            processList.append(imgstep)
+                            process2List.append(img0)
+
                         samples_ddim, _ = sampler.sample(S=opt.ddim_steps,
                                                          conditioning=c,
                                                          batch_size=opt.n_samples,
@@ -340,8 +353,43 @@ def main():
                                                          verbose=False,
                                                          unconditional_guidance_scale=opt.scale,
                                                          unconditional_conditioning=uc,
+                                                         img_callback=save_step,
                                                          eta=opt.ddim_eta,
                                                          x_T=start_code)
+
+                        def saveImages():
+                            counter = 0
+                            for imgstep in process2List:
+                                # decode, clamp and permute sample?
+                                samples = model.decode_first_stage(imgstep)
+                                samples = torch.clamp((samples + 1.0) / 2.0, min=0.0, max=1.0)
+                                samples = samples.cpu().permute(0, 2, 3, 1).numpy()
+                                # checked_image, has_nsfw_concept = check_safety(samples)
+                                checked_image_torch = torch.from_numpy(samples).permute(0, 3, 1, 2)
+                                for i, sample in enumerate(checked_image_torch):
+                                    sample = 255. * rearrange(sample.cpu().numpy(), 'c h w -> h w c')
+                                    img = Image.fromarray(sample.astype(np.uint8))
+                                    # img = put_watermark(img, wm_encoder)
+                                    img.save(os.path.join(process2_path, f"{counter:05}.png"))
+                                    counter += 1
+                            counter = 0
+                            for imgstep in processList:
+                                # decode, clamp and permute sample?
+                                samples = model.decode_first_stage(imgstep)
+                                samples = torch.clamp((samples + 1.0) / 2.0, min=0.0, max=1.0)
+                                samples = samples.cpu().permute(0, 2, 3, 1).numpy()
+                                # checked_image, has_nsfw_concept = check_safety(samples)
+                                checked_image_torch = torch.from_numpy(samples).permute(0, 3, 1, 2)
+                                for i, sample in enumerate(checked_image_torch):
+                                    sample = 255. * rearrange(sample.cpu().numpy(), 'c h w -> h w c')
+                                    img = Image.fromarray(sample.astype(np.uint8))
+                                    # img = put_watermark(img, wm_encoder)
+                                    img.save(os.path.join(process_path, f"{counter:05}.png"))
+                                    counter += 1
+
+                            processList.clear()
+                            process2List.clear()
+                        saveImages()
 
                         # decode, clamp and permute sample?
                         # TODO: what is this doing
