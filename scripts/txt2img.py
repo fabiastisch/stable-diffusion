@@ -342,9 +342,9 @@ def main():
                         # ddim_eta == random noise added during sampling
                         # 1 = full; 0 = smooth changes (https://twitter.com/RiversHaveWings/status/1481389818315558912)
 
-                        def save_step(imgstep, img0, i):
-                            processList.append(imgstep)
-                            process2List.append(img0)
+                        def save_step(prev, imgx0, i):
+                            processList.append(prev)
+                            process2List.append(imgx0)
 
                         samples_ddim, _ = sampler.sample(S=opt.ddim_steps,
                                                          conditioning=c,
